@@ -1,10 +1,13 @@
 package com.customtotem.playertotems.client;
 
+import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.vertex.PoseStack;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.SubmitNodeCollector;
 import net.minecraft.client.renderer.rendertype.RenderType;
 import net.minecraft.client.renderer.rendertype.RenderTypes;
 import net.minecraft.client.renderer.special.SpecialModelRenderer;
+import net.minecraft.client.renderer.texture.DynamicTexture;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 import org.joml.Vector3f;
@@ -20,23 +23,35 @@ public class PlayerTotemRenderer implements SpecialModelRenderer<PlayerTotemClie
     public static final PlayerTotemRenderer INSTANCE = new PlayerTotemRenderer();
     private static final Identifier DEFAULT_SKIN = Identifier.withDefaultNamespace("textures/entity/player/wide/steve.png");
     private static final Identifier WHITE_TEXTURE = Identifier.fromNamespaceAndPath("playertotems", "textures/misc/white.png");
+    private static final org.joml.Matrix4fc FLIP_Z_180 = new org.joml.Matrix4f().rotationZ((float) Math.PI);
+    private static final Vector3fc EXTENT_MIN = new Vector3f(0.0f, 0.0f, 0.0f);
+    private static final Vector3fc EXTENT_MAX = new Vector3f(1.0f, 1.0f, 1.0f);
+    private static boolean whiteTextureRegistered = false;
+
+    private static Identifier getGuaranteedWhiteTexture() {
+        if (!whiteTextureRegistered) {
+            Minecraft client = Minecraft.getInstance();
+            if (client != null && client.getTextureManager() != null) {
+                try {
+                    NativeImage img = new NativeImage(1, 1, false);
+                    img.setPixel(0, 0, 0xFFFFFFFF);
+                    DynamicTexture tex = new DynamicTexture(() -> "playertotems_white", img);
+                    client.getTextureManager().register(WHITE_TEXTURE, tex);
+                    whiteTextureRegistered = true;
+                } catch (Exception ignored) {
+                }
+            }
+        }
+        return WHITE_TEXTURE;
+    }
 
     @Override
     public void submit(PlayerTotemClientHandler.SkinData skinData, PoseStack poseStack, SubmitNodeCollector collector, int light, int overlay, boolean hasFoil, int color) {
-        if (skinData == null || skinData.texture() == null) {
-            skinData = new PlayerTotemClientHandler.SkinData(DEFAULT_SKIN, false);
+        if (skinData == null) {
+            skinData = PlayerTotemClientHandler.DEFAULT_SKIN_DATA;
         }
 
         Identifier skinTexture = skinData.texture();
-        if (skinTexture == null) {
-            skinTexture = DEFAULT_SKIN;
-        } else {
-            String path = skinTexture.getPath();
-            // Defensive sanitization: ensure path is a valid texture resource
-            if (!path.startsWith("textures/") && !path.startsWith("skins/")) {
-                skinTexture = skinTexture.withPath("textures/" + path + ".png");
-            }
-        }
         boolean isSlim = skinData.isSlim();
 
         // entityCutout discards fragments with alpha < 0.1 and avoids depth sorting issues
@@ -48,15 +63,15 @@ public class PlayerTotemRenderer implements SpecialModelRenderer<PlayerTotemClie
 
         // Dinnerbone / Grumm upside-down flip
         if (skinData.isUpsideDown()) {
-            poseStack.mulPose(new org.joml.Matrix4f().rotationZ((float) Math.PI));
+            poseStack.mulPose(FLIP_Z_180);
         }
 
         poseStack.scale(1.0f / 16.0f, 1.0f / 16.0f, 1.0f / 16.0f);
         poseStack.translate(-8.0f, -8.0f, -8.0f);
 
-        // 1. If this totem has the jeb_ effect, render the glowing rainbow border first!
+        // 1. If this totem has the jeb_ effect, render the 3D volumetric crystal rainbow aura
         if (skinData.isRainbow()) {
-            RenderType borderRenderType = RenderTypes.entityCutout(WHITE_TEXTURE, false);
+            RenderType borderRenderType = RenderTypes.entityCutout(getGuaranteedWhiteTexture(), false);
             collector.submitCustomGeometry(poseStack, borderRenderType, (pose, consumer) -> {
                 TotemModelGeometry.renderRainbowBorder(pose, consumer, light, overlay, isSlim);
             });
@@ -78,8 +93,8 @@ public class PlayerTotemRenderer implements SpecialModelRenderer<PlayerTotemClie
 
     @Override
     public void getExtents(Consumer<Vector3fc> consumer) {
-        consumer.accept(new Vector3f(0.0f, 0.0f, 0.0f));
-        consumer.accept(new Vector3f(1.0f, 1.0f, 1.0f));
+        consumer.accept(EXTENT_MIN);
+        consumer.accept(EXTENT_MAX);
     }
 
     @Override

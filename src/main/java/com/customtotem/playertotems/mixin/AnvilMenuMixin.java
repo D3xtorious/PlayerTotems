@@ -42,7 +42,7 @@ public abstract class AnvilMenuMixin {
                     }
                 }
             }
-        } catch (Throwable ignored) {
+        } catch (Exception ignored) {
         }
     }
 }

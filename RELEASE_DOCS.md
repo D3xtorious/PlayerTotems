@@ -65,8 +65,8 @@ Simply hold any unrenamed Totem of Undying:
 * **`#jeb_`** or **`#dinnerbone`**: Adds the effect to your own/contextual totem skin without binding a specific username.
 * **`jeb_`** or **`Dinnerbone`**: Standalone classic vanilla easter eggs.
 
-#### 4. Wall Frames & Displays
-Place an unrenamed totem in an **Item Frame** on a server with Player Totems installed — the frame will permanently display your skin to anyone walking by!
+#### 4. Wall Frames, Displays & Totem Gifting
+Place an unrenamed totem in an **Item Frame** on a server with Player Totems installed — the framed totem binds to your skin so anyone walking by sees your statue, and if a friend takes it from the frame, they keep your personalized totem as a gift!
 
 ---
 

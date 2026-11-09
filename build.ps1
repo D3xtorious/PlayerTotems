@@ -10,15 +10,20 @@ Set-Location $scriptDir
 
 Write-Host "==> Building Player Totems (1.2.1+26.3)..." -ForegroundColor Cyan
 
-# Ensure target directories exist
-if (-not (Test-Path "target/classes")) {
-    New-Item -ItemType Directory -Force -Path "target/classes" | Out-Null
+# Ensure clean target/classes directory
+if (Test-Path "target/classes") {
+    Remove-Item -Recurse -Force "target/classes"
 }
+New-Item -ItemType Directory -Force -Path "target/classes" | Out-Null
 
 # 1. Compile Java sources
 Write-Host "==> Compiling Java sources from sources.txt..." -ForegroundColor Cyan
 if (Test-Path $ClasspathFile) {
     & javac -encoding UTF-8 -cp "@$ClasspathFile" -d "target/classes" "@sources.txt"
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "Compilation failed with exit code $LASTEXITCODE"
+        exit $LASTEXITCODE
+    }
 } else {
     Write-Error "Classpath file '$ClasspathFile' not found. Please provide a valid classpath argument file."
     exit 1

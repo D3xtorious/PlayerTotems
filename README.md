@@ -17,9 +17,9 @@ Tired of the boring old golden totem? **Player Totems** turns your Totem of Undy
 - 👤 **Your Skin in 3D:** Hold a totem and it shows your actual skin in 3D — including hats, hair, jackets, and outer layers!
 - 👥 **Multiplayer Friendly:** When your friend holds a totem, you see *their* skin!
 - 🏷️ **Anvil Naming:** Rename a totem in an anvil to any player's username (like `Technoblade` or your friend's name) to permanently turn it into their skin!
-- 🌈 **Easter Eggs & Modifiers (`#jeb_` & `#dinnerbone`):** Add `#jeb_` (e.g. `Technoblade#jeb_`) to surround the totem with a radiant, animated rainbow border while preserving the player's true skin! Or add `#dinnerbone` / `#grumm` to flip it upside-down! Combine them (`Technoblade#jeb_#dinnerbone`) for both!
+- 🌈 **Easter Eggs & Modifiers (`#jeb_` & `#dinnerbone`):** Add `#jeb_` (e.g. `Technoblade#jeb_`) to surround the totem with a 3D volumetric crystal rainbow aura while preserving the player's true skin! Or add `#dinnerbone` / `#grumm` to flip it upside-down! Combine them (`Technoblade#jeb_#dinnerbone`) for both!
 - 💥 **Totem Pop Screen Animation:** When a totem activates to save your life, the floating animation in the center of your screen honors the exact skin of the popped totem (including renamed players and easter egg effects)!
-- 🖼️ **Trophy Frames:** Put totems in item frames on your wall to make an epic trophy room or Hall of Fame in your base.
+- 🖼️ **Trophy Frames & Totem Gifting:** Put an unrenamed totem in an item frame on your wall — it binds to your skin so you can build a Hall of Fame or gift your own totem to friends on a server!
 - 📐 **Steve & Alex Arms:** Automatically detects classic 4-pixel arms (Steve) and slim 3-pixel arms (Alex). No setup needed!
 
 ---

@@ -322,11 +322,18 @@ public class TotemModelGeometry {
     };
 
     /**
-     * Precomputed perimeter node along the 58-unit contour, storing exact world-space
-     * coordinates (x, y), 45-degree miter expansion vector (mx, my), and normalized
-     * perimeter arc length s in [0, 1).
+     * Pre-baked 3D volumetric crystal aura node along the totem silhouette.
+     * All ring coordinates (x0..x2, y0..y2), Z-depths (zF1, zB1), 3D face normals,
+     * and diagonal wave phase are precomputed once at startup for zero per-frame geometry math.
      */
-    public record BorderNode(float x, float y, float mx, float my, float s) {}
+    public record BorderNode(
+        float x0, float y0,
+        float x1, float y1, float zF1, float zB1,
+        float x2, float y2,
+        float innerNx, float innerNy, float innerNz,
+        float outerNx, float outerNy, float outerNz,
+        float wavePhase
+    ) {}
 
     private static final List<BorderNode> BORDER_NODES = new ArrayList<>();
 
@@ -336,7 +343,7 @@ public class TotemModelGeometry {
         int n = INNER_CONTOUR_GRID.length;
         float[][] edgeNormals = new float[n][2];
         int[] edgeLengths = new int[n];
-        int totalSteps = 0;
+        int totalPerimeter = 0;
 
         for (int i = 0; i < n; i++) {
             int[] p0 = INNER_CONTOUR_GRID[i];
@@ -345,15 +352,13 @@ public class TotemModelGeometry {
             int dy = p1[1] - p0[1];
             int len = Math.abs(dx) + Math.abs(dy);
             edgeLengths[i] = len;
-            totalSteps += len;
+            totalPerimeter += len;
             // Outward normal for counter-clockwise polygon: (dy, -dx) / len
             edgeNormals[i][0] = (float) dy / len;
             edgeNormals[i][1] = (float) (-dx) / len;
         }
 
-        // Compute exact 45-degree miter vector at each of the 24 corners: m_i = n_{i-1} + n_i
-        // For orthogonal rectilinear edges, n_{i-1} and n_i are perpendicular unit vectors,
-        // so their sum has components in {-1, 0, +1} and projects to exactly 1.0 along both adjacent normals.
+        // Exact 45-degree miter vector at each of the 24 corners: m_i = n_{i-1} + n_i
         float[][] cornerMiters = new float[n][2];
         for (int i = 0; i < n; i++) {
             float[] nPrev = edgeNormals[(i - 1 + n) % n];
@@ -362,32 +367,68 @@ public class TotemModelGeometry {
             cornerMiters[i][1] = nPrev[1] + nCurr[1];
         }
 
-        // Subdivide into 1-pixel steps (58 nodes total) for smooth per-pixel rainbow chase
-        int stepIndex = 0;
+        // Radial offsets for the 3-ring volumetric crystal profile:
+        // Ring 0 (d0 = 0.00): tucked inside the inner totem body [7.50, 8.50]
+        // Ring 1 (d1 = 0.34): 3D volumetric crest clearing the outer hat/jacket wear layer
+        // Ring 2 (d2 = 0.64): razor-sharp outer crystal blade apex at z = 8.00
+        final float d1 = 0.34f;
+        final float d2 = 0.64f;
+
+        int accumulatedLen = 0;
         for (int i = 0; i < n; i++) {
             int[] p0 = INNER_CONTOUR_GRID[i];
             int[] p1 = INNER_CONTOUR_GRID[(i + 1) % n];
-            int steps = edgeLengths[i];
-            float[] m0 = cornerMiters[i];
-            float[] m1 = cornerMiters[(i + 1) % n];
+            int edgeLen = edgeLengths[i];
+            // Subdivide long edges into ~2px steps so straight edges stay straight while smooth in color
+            int subdivisions = Math.max(1, (edgeLen + 1) / 2);
+            float outNx = edgeNormals[i][0];
+            float outNy = edgeNormals[i][1];
 
-            for (int k = 0; k < steps; k++) {
-                float t = (float) k / (float) steps;
+            // Precompute 3D facet unit normals for this edge's inner bevel and outer crystal blade
+            float innerNx = -outNx * 0.24f;
+            float innerNy = -outNy * 0.24f;
+            float innerNz = 0.97f;
+
+            float outerNx = outNx * 0.92f;
+            float outerNy = outNy * 0.92f;
+            float outerNz = 0.39f;
+
+            for (int k = 0; k < subdivisions; k++) {
+                float t = (float) k / (float) subdivisions;
                 float gx = p0[0] + (p1[0] - p0[0]) * t;
                 float gy = p0[1] + (p1[1] - p0[1]) * t;
-                float x = X_ORIGIN + gx;
-                float y = Y_ORIGIN + gy;
+                float x0 = X_ORIGIN + gx;
+                float y0 = Y_ORIGIN + gy;
 
-                // Linearly interpolate the corner miter vectors along the edge so that
-                // every offset ring at distance d stays strictly parallel to the edge
-                // without self-intersections on short 1px steps.
-                float mx = m0[0] * (1.0f - t) + m1[0] * t;
-                float my = m0[1] * (1.0f - t) + m1[1] * t;
-                float s = (float) stepIndex / (float) totalSteps;
+                // Use the exact 45-degree corner miter at the corner (k == 0), and pure perpendicular
+                // edge normal at interior subdivision points so straight runs never skew
+                float mx = (k == 0) ? cornerMiters[i][0] : outNx;
+                float my = (k == 0) ? cornerMiters[i][1] : outNy;
 
-                BORDER_NODES.add(new BorderNode(x, y, mx, my, s));
-                stepIndex++;
+                float x1 = x0 + mx * d1;
+                float y1 = y0 + my * d1;
+                float x2 = x0 + mx * d2;
+                float y2 = y0 + my * d2;
+
+                // Step Z-depth outward around the 3D head/hat layer (gy >= 7.5) vs body/wings
+                boolean isHeadDepth = gy >= 7.5f;
+                float zF1 = isHeadDepth ? 8.78f : 8.70f;
+                float zB1 = isHeadDepth ? 7.22f : 7.30f;
+
+                float s = (accumulatedLen + edgeLen * t) / (float) totalPerimeter;
+                // Combine perimeter progression with a diagonal spatial wave (gx + gy)
+                float wavePhase = (s * 0.65f + (gx + gy) * 0.025f) % 1.0f;
+
+                BORDER_NODES.add(new BorderNode(
+                    x0, y0,
+                    x1, y1, zF1, zB1,
+                    x2, y2,
+                    innerNx, innerNy, innerNz,
+                    outerNx, outerNy, outerNz,
+                    wavePhase
+                ));
             }
+            accumulatedLen += edgeLen;
         }
     }
 
@@ -397,7 +438,7 @@ public class TotemModelGeometry {
     public static int getHsvColor(float hue, float saturation, float value) {
         float h = (hue % 1.0f) * 6.0f;
         if (h < 0.0f) h += 6.0f;
-        int i = (int) Math.floor(h);
+        int i = (int) h;
         float f = h - i;
         float p = value * (1.0f - saturation);
         float q = value * (1.0f - saturation * f);
@@ -413,9 +454,9 @@ public class TotemModelGeometry {
             case 5 -> { r = value; g = p;     b = q; }
         }
 
-        int red = Math.min(255, Math.max(0, Math.round(r * 255.0f)));
-        int green = Math.min(255, Math.max(0, Math.round(g * 255.0f)));
-        int blue = Math.min(255, Math.max(0, Math.round(b * 255.0f)));
+        int red = (int) (r * 255.0f + 0.5f);
+        int green = (int) (g * 255.0f + 0.5f);
+        int blue = (int) (b * 255.0f + 0.5f);
 
         return (0xFF << 24) | (red << 16) | (green << 8) | blue;
     }
@@ -425,169 +466,101 @@ public class TotemModelGeometry {
      */
     public static int getRainbowColor() {
         long time = System.currentTimeMillis();
-        float hue = (float) (time % 9000L) / 9000.0f; // Calm 9.0s smooth rainbow loop
-        return getHsvColor(hue, 1.0f, 0.92f);
+        float hue = (float) (time % 6000L) / 6000.0f;
+        return getHsvColor(hue, 1.0f, 0.94f);
     }
 
     /**
-     * Computes a crisp, deep-saturated rainbow color for a given perimeter node and 3D bevel ring.
-     * Avoids white/pastel desaturation or radial hue blurring so the border looks sharp and clean
-     * rather than diffused.
-     *
-     * @param s Normalized perimeter coordinate in [0, 1)
-     * @param timeFactor Primary rainbow circulation phase in [0, 1)
-     * @param ringIndex Bevel ring index (0 = inner root, 1 = ridge, 2 = outer bevel, 3 = outer rim)
+     * Computes prismatic 3D facet colors for a node:
+     * Ring 0 = deep inner root, Ring 1 = luminous jewel crest (+hue dispersion), Ring 2 = crisp outer apex (-hue dispersion).
      */
-    private static int computeRingColor(float s, float timeFactor, int ringIndex) {
-        float baseHue = (s - timeFactor) % 1.0f;
-        if (baseHue < 0.0f) baseHue += 1.0f;
-
-        // Crisp 100% saturation across all rings (no white washout), with subtle 3D facet shading
+    private static int computeNodeColor( float wavePhase, float timeFactor, int ringIndex) {
+        float baseHue = wavePhase - timeFactor;
         return switch (ringIndex) {
-            case 0 -> getHsvColor(baseHue, 1.0f, 0.86f);
-            case 1 -> getHsvColor(baseHue, 1.0f, 0.94f);
-            case 2 -> getHsvColor(baseHue, 1.0f, 0.82f);
-            default -> getHsvColor(baseHue, 1.0f, 0.68f);
+            case 0 -> getHsvColor(baseHue, 1.0f, 0.84f);
+            case 1 -> getHsvColor(baseHue + 0.035f, 0.88f, 1.00f);
+            default -> getHsvColor(baseHue - 0.035f, 1.0f, 0.76f);
         };
     }
 
     /**
-     * Ensures the border has a soft minimum brightness in dark caves without blowing out
-     * into an over-exposed fullbright glow.
+     * High-contrast emissive minimum light so the 3D crystal aura gleams in dark caves and GUI slots.
      */
-    private static int getSoftBorderLight(int worldLight) {
+    private static int getAuraLight(int worldLight) {
         int block = (worldLight >> 4) & 0xF;
         int sky = (worldLight >> 20) & 0xF;
-        int softBlock = Math.max(block, 9);
-        int softSky = Math.max(sky, 9);
-        return (softSky << 20) | (softBlock << 4);
+        int emissiveBlock = Math.max(block, 13);
+        int emissiveSky = Math.max(sky, 13);
+        return (emissiveSky << 20) | (emissiveBlock << 4);
     }
 
     /**
-     * Renders a crisp, 3D mitered bevelled rainbow frame around the totem silhouette.
+     * Renders a 3D volumetric crystal rainbow aura shell around the totem statue.
      *
-     * <p>Constructs 4 concentric 3D profile rings across all 58 perimeter segments (464 watertight quads):
-     * <ul>
-     *   <li><b>Ring 0 (Inner Root):</b> {@code d = 0.00f, z = [7.52, 8.48]} — tucked cleanly inside the body edge</li>
-     *   <li><b>Ring 1 (Bevel Ridge):</b> {@code d = 0.22f, z = [7.46, 8.54]} — crisp rainbow ridge</li>
-     *   <li><b>Ring 2 (Outer Bevel):</b> {@code d = 0.45f, z = [7.56, 8.44]} — rich saturated slope</li>
-     *   <li><b>Ring 3 (Outer Rim):</b> {@code d = 0.60f, z = [7.76, 8.24]} — clean outer edge wall</li>
-     * </ul>
+     * <p>Uses 4 pre-baked 3D facets per segment (Front Inner Slope, Front Outer Crystal Blade,
+     * Back Outer Crystal Blade, Back Inner Slope) that step in Z-depth around the 3D head and body
+     * and converge to a sharp centerline apex at {@code z = 8.00f}.</p>
      */
     public static void renderRainbowBorder(PoseStack.Pose pose, VertexConsumer consumer, int light, int overlay, boolean isSlim) {
         ensureLoaded();
         int n = BORDER_NODES.size();
         if (n < 3) return;
 
-        int borderLight = getSoftBorderLight(light);
+        int borderLight = getAuraLight(light);
 
         long now = System.currentTimeMillis();
-        float timeFactor = (float) (now % 9000L) / 9000.0f; // Calm, unhurried 9.0s rainbow circulation
+        float timeFactor = (float) (now % 6000L) / 6000.0f; // Smooth 6.0s traveling chromatic wave
 
-        // Tighter, crisp 4-ring cross-section profile: {d, zFront, zBack}
-        // Ring 0 sits at [7.52, 8.48], strictly inside the [7.50, 8.50] totem body so no color bleeds onto the skin face
-        final float d0 = 0.00f, zF0 = 8.48f, zB0 = 7.52f;
-        final float d1 = 0.22f, zF1 = 8.54f, zB1 = 7.46f;
-        final float d2 = 0.45f, zF2 = 8.44f, zB2 = 7.56f;
-        final float d3 = 0.60f, zF3 = 8.24f, zB3 = 7.76f;
+        final float zF0 = 8.48f, zB0 = 7.52f, zApex = 8.00f;
+
+        BorderNode first = BORDER_NODES.get(0);
+        int cA0 = computeNodeColor(first.wavePhase, timeFactor, 0);
+        int cA1 = computeNodeColor(first.wavePhase, timeFactor, 1);
+        int cA2 = computeNodeColor(first.wavePhase, timeFactor, 2);
 
         for (int i = 0; i < n; i++) {
             BorderNode a = BORDER_NODES.get(i);
             BorderNode b = BORDER_NODES.get((i + 1) % n);
 
-            // Ring coordinates for node A
-            float ax0 = a.x + a.mx * d0, ay0 = a.y + a.my * d0;
-            float ax1 = a.x + a.mx * d1, ay1 = a.y + a.my * d1;
-            float ax2 = a.x + a.mx * d2, ay2 = a.y + a.my * d2;
-            float ax3 = a.x + a.mx * d3, ay3 = a.y + a.my * d3;
+            int cB0 = computeNodeColor(b.wavePhase, timeFactor, 0);
+            int cB1 = computeNodeColor(b.wavePhase, timeFactor, 1);
+            int cB2 = computeNodeColor(b.wavePhase, timeFactor, 2);
 
-            // Ring coordinates for node B
-            float bx0 = b.x + b.mx * d0, by0 = b.y + b.my * d0;
-            float bx1 = b.x + b.mx * d1, by1 = b.y + b.my * d1;
-            float bx2 = b.x + b.mx * d2, by2 = b.y + b.my * d2;
-            float bx3 = b.x + b.mx * d3, by3 = b.y + b.my * d3;
-
-            // Per-ring colors at node A and node B
-            int cA0 = computeRingColor(a.s, timeFactor, 0);
-            int cA1 = computeRingColor(a.s, timeFactor, 1);
-            int cA2 = computeRingColor(a.s, timeFactor, 2);
-            int cA3 = computeRingColor(a.s, timeFactor, 3);
-
-            int cB0 = computeRingColor(b.s, timeFactor, 0);
-            int cB1 = computeRingColor(b.s, timeFactor, 1);
-            int cB2 = computeRingColor(b.s, timeFactor, 2);
-            int cB3 = computeRingColor(b.s, timeFactor, 3);
-
-            // Outward unit normal in XY for this segment
-            float dx = b.x - a.x;
-            float dy = b.y - a.y;
-            float segLen = (float) Math.sqrt(dx * dx + dy * dy);
-            float outNx = segLen > 1e-4f ? (dy / segLen) : 0.0f;
-            float outNy = segLen > 1e-4f ? (-dx / segLen) : 1.0f;
-
-            // 1. Front Inner Bevel (Ring 0 -> Ring 1, facing +Z and slightly inward)
+            // 1. Front Inner Bevel (Ring 0 Front -> Ring 1 Volumetric Crest Front)
             emitBorderQuad(consumer, pose,
-                ax0, ay0, zF0, cA0,
-                bx0, by0, zF0, cB0,
-                bx1, by1, zF1, cB1,
-                ax1, ay1, zF1, cA1,
-                -outNx * 0.22f, -outNy * 0.22f, 0.97f, overlay, borderLight);
+                a.x0, a.y0, zF0,   cA0,
+                b.x0, b.y0, zF0,   cB0,
+                b.x1, b.y1, b.zF1, cB1,
+                a.x1, a.y1, a.zF1, cA1,
+                a.innerNx, a.innerNy, a.innerNz, overlay, borderLight);
 
-            // 2. Front Middle Bevel (Ring 1 -> Ring 2, facing +Z and outward)
+            // 2. Front Outer Crystal Blade (Ring 1 Crest Front -> Ring 2 Sharp Apex at z = 8.00)
             emitBorderQuad(consumer, pose,
-                ax1, ay1, zF1, cA1,
-                bx1, by1, zF1, cB1,
-                bx2, by2, zF2, cB2,
-                ax2, ay2, zF2, cA2,
-                outNx * 0.40f, outNy * 0.40f, 0.91f, overlay, borderLight);
+                a.x1, a.y1, a.zF1, cA1,
+                b.x1, b.y1, b.zF1, cB1,
+                b.x2, b.y2, zApex, cB2,
+                a.x2, a.y2, zApex, cA2,
+                a.outerNx, a.outerNy, a.outerNz, overlay, borderLight);
 
-            // 3. Front Outer Facet (Ring 2 -> Ring 3, steeper jewel bevel facing +Z and outward)
+            // 3. Back Outer Crystal Blade (Ring 2 Sharp Apex at z = 8.00 -> Ring 1 Crest Back)
             emitBorderQuad(consumer, pose,
-                ax2, ay2, zF2, cA2,
-                bx2, by2, zF2, cB2,
-                bx3, by3, zF3, cB3,
-                ax3, ay3, zF3, cA3,
-                outNx * 0.79f, outNy * 0.79f, 0.61f, overlay, borderLight);
+                a.x2, a.y2, zApex, cA2,
+                b.x2, b.y2, zApex, cB2,
+                b.x1, b.y1, b.zB1, cB1,
+                a.x1, a.y1, a.zB1, cA1,
+                a.outerNx, a.outerNy, -a.outerNz, overlay, borderLight);
 
-            // 4. Outer Crystal Rim Wall (Ring 3 Front -> Ring 3 Back, facing strictly outward in XY)
+            // 4. Back Inner Bevel (Ring 1 Crest Back -> Ring 0 Back)
             emitBorderQuad(consumer, pose,
-                ax3, ay3, zF3, cA3,
-                bx3, by3, zF3, cB3,
-                bx3, by3, zB3, cB3,
-                ax3, ay3, zB3, cA3,
-                outNx, outNy, 0.0f, overlay, borderLight);
+                a.x1, a.y1, a.zB1, cA1,
+                b.x1, b.y1, b.zB1, cB1,
+                b.x0, b.y0, zB0,   cB0,
+                a.x0, a.y0, zB0,   cA0,
+                a.innerNx, a.innerNy, -a.innerNz, overlay, borderLight);
 
-            // 5. Back Outer Facet (Ring 3 -> Ring 2 on back side, facing -Z and outward)
-            emitBorderQuad(consumer, pose,
-                ax3, ay3, zB3, cA3,
-                bx3, by3, zB3, cB3,
-                bx2, by2, zB2, cB2,
-                ax2, ay2, zB2, cA2,
-                outNx * 0.79f, outNy * 0.79f, -0.61f, overlay, borderLight);
-
-            // 6. Back Middle Bevel (Ring 2 -> Ring 1 on back side, facing -Z and outward)
-            emitBorderQuad(consumer, pose,
-                ax2, ay2, zB2, cA2,
-                bx2, by2, zB2, cB2,
-                bx1, by1, zB1, cB1,
-                ax1, ay1, zB1, cA1,
-                outNx * 0.40f, outNy * 0.40f, -0.91f, overlay, borderLight);
-
-            // 7. Back Inner Bevel (Ring 1 -> Ring 0 on back side, facing -Z and slightly inward)
-            emitBorderQuad(consumer, pose,
-                ax1, ay1, zB1, cA1,
-                bx1, by1, zB1, cB1,
-                bx0, by0, zB0, cB0,
-                ax0, ay0, zB0, cA0,
-                -outNx * 0.22f, -outNy * 0.22f, -0.97f, overlay, borderLight);
-
-            // 8. Inner Root Closure Wall (Ring 0 Back -> Ring 0 Front, seals inner side seams)
-            emitBorderQuad(consumer, pose,
-                ax0, ay0, zB0, cA0,
-                bx0, by0, zB0, cB0,
-                bx0, by0, zF0, cB0,
-                ax0, ay0, zF0, cA0,
-                -outNx, -outNy, 0.0f, overlay, borderLight);
+            cA0 = cB0;
+            cA1 = cB1;
+            cA2 = cB2;
         }
     }
 

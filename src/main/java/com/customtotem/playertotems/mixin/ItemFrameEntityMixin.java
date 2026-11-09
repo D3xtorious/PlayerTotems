@@ -23,18 +23,20 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 public abstract class ItemFrameEntityMixin {
     @Shadow public abstract ItemStack getItem();
 
-    @Inject(method = "interact", at = @At("HEAD"))
+    @Inject(
+        method = "interact",
+        at = @At(
+            value = "INVOKE",
+            target = "Lnet/minecraft/world/entity/decoration/ItemFrame;setItem(Lnet/minecraft/world/item/ItemStack;)V",
+            shift = At.Shift.AFTER
+        )
+    )
     private void onInteract(Player player, InteractionHand hand, Vec3 pos, CallbackInfoReturnable<InteractionResult> cir) {
-        try {
-            if (this.getItem().isEmpty()) {
-                ItemStack held = player.getItemInHand(hand);
-                if (held != null && held.is(Items.TOTEM_OF_UNDYING)) {
-                    if (!held.has(DataComponents.PROFILE) && !held.has(DataComponents.CUSTOM_NAME)) {
-                        held.set(DataComponents.PROFILE, ResolvableProfile.createResolved(player.getGameProfile()));
-                    }
-                }
+        ItemStack framed = this.getItem();
+        if (!framed.isEmpty() && (framed.is(Items.TOTEM_OF_UNDYING) || framed.has(DataComponents.DEATH_PROTECTION))) {
+            if (!framed.has(DataComponents.PROFILE) && !framed.has(DataComponents.CUSTOM_NAME)) {
+                framed.set(DataComponents.PROFILE, ResolvableProfile.createResolved(player.getGameProfile()));
             }
-        } catch (Throwable ignored) {
         }
     }
 }

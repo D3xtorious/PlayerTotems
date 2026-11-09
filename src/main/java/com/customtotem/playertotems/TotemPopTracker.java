@@ -26,9 +26,9 @@ public class TotemPopTracker {
      */
     public static void recordPoppedTotem(UUID entityUuid, ItemStack stack) {
         if (entityUuid == null || stack == null || stack.isEmpty()) return;
-        ItemStack copy = stack.copy();
-        copy.setCount(1);
-        RECENT_POPS.put(entityUuid, new PoppedTotemEntry(copy, System.currentTimeMillis()));
+        long now = System.currentTimeMillis();
+        RECENT_POPS.entrySet().removeIf(e -> now - e.getValue().timestamp() > EXPIRATION_MS);
+        RECENT_POPS.put(entityUuid, new PoppedTotemEntry(stack.copyWithCount(1), now));
     }
 
     /**
@@ -36,10 +36,9 @@ public class TotemPopTracker {
      */
     public static ItemStack getRecordedPoppedTotem(UUID entityUuid) {
         if (entityUuid == null) return null;
-        PoppedTotemEntry entry = RECENT_POPS.get(entityUuid);
+        PoppedTotemEntry entry = RECENT_POPS.remove(entityUuid);
         if (entry == null) return null;
         if (System.currentTimeMillis() - entry.timestamp() > EXPIRATION_MS) {
-            RECENT_POPS.remove(entityUuid);
             return null;
         }
         return entry.stack().copy();

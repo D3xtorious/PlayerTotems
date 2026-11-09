@@ -22,6 +22,9 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.item.component.ResolvableProfile;
 
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
 /**
  * Handles skin resolution, model geometry type (Classic 4px vs Slim 3px),
  * and special model layer injection for Totems of Undying.
@@ -32,11 +35,16 @@ import net.minecraft.world.item.component.ResolvableProfile;
 public class PlayerTotemClientHandler {
     private static final Identifier DEFAULT_SKIN = Identifier.withDefaultNamespace("textures/entity/player/wide/steve.png");
     private static final Identifier ALEX_SKIN = Identifier.withDefaultNamespace("textures/entity/player/slim/alex.png");
+    public static final SkinData DEFAULT_SKIN_DATA = new SkinData(DEFAULT_SKIN, false);
+    private static final SkinData ALEX_SKIN_DATA = new SkinData(ALEX_SKIN, true);
+    private static final int MAX_PROFILE_CACHE_SIZE = 256;
+    private static final Map<String, ResolvableProfile> UNRESOLVED_PROFILE_CACHE = new ConcurrentHashMap<>();
 
     /**
      * Skin and geometry layout container.
-     * Automatically ensures texture identifier is a valid texture path (e.g. converting asset IDs like
-     * "entity/player/wide/steve" to "textures/entity/player/wide/steve.png").
+     * Automatically ensures texture identifier is non-null and converts raw vanilla player asset IDs
+     * (e.g. "entity/player/wide/steve") to full texture paths ("textures/entity/player/wide/steve.png")
+     * without corrupting dynamic skin paths from skin mods.
      *
      * @param texture Skin texture resource identifier
      * @param isSlim True if the player uses the 3px Alex / Slim model; false for 4px Steve / Classic
@@ -45,10 +53,12 @@ public class PlayerTotemClientHandler {
      */
     public record SkinData(Identifier texture, boolean isSlim, boolean isRainbow, boolean isUpsideDown) {
         public SkinData {
-            if (texture != null) {
+            if (texture == null) {
+                texture = DEFAULT_SKIN;
+            } else {
                 String path = texture.getPath();
-                if (!path.startsWith("textures/") && !path.startsWith("skins/")) {
-                    texture = texture.withPath("textures/" + path + ".png");
+                if (path.startsWith("entity/player/")) {
+                    texture = texture.withPath("textures/" + path + (path.endsWith(".png") ? "" : ".png"));
                 }
             }
         }
@@ -58,6 +68,9 @@ public class PlayerTotemClientHandler {
         }
 
         public SkinData withModifiers(boolean isRainbow, boolean isUpsideDown) {
+            if (this.isRainbow == isRainbow && this.isUpsideDown == isUpsideDown) {
+                return this;
+            }
             return new SkinData(this.texture, this.isSlim, isRainbow, isUpsideDown);
         }
     }
@@ -68,11 +81,11 @@ public class PlayerTotemClientHandler {
      */
     public static SkinData getSkinDataFromPlayerSkin(PlayerSkin skin) {
         if (skin == null || skin.body() == null) {
-            return new SkinData(DEFAULT_SKIN, false);
+            return DEFAULT_SKIN_DATA;
         }
         Identifier texture = skin.body().texturePath();
         if (texture == null) {
-            texture = DEFAULT_SKIN;
+            return DEFAULT_SKIN_DATA;
         }
         boolean isSlim = skin.model() == PlayerModelType.SLIM;
         return new SkinData(texture, isSlim);
@@ -91,7 +104,7 @@ public class PlayerTotemClientHandler {
                     return getSkinDataFromPlayerSkin(renderInfo.playerSkin());
                 }
             }
-        } catch (Throwable ignored) {}
+        } catch (Exception ignored) {}
         return null;
     }
 
@@ -102,14 +115,13 @@ public class PlayerTotemClientHandler {
     public static SkinData resolveSkinFromName(String name) {
         if (name == null || name.isBlank()) return null;
         String trimmed = name.trim();
-        String lower = trimmed.toLowerCase();
 
         // Standard vanilla defaults
-        if (lower.equals("steve")) {
-            return new SkinData(DEFAULT_SKIN, false);
+        if (trimmed.equalsIgnoreCase("steve")) {
+            return DEFAULT_SKIN_DATA;
         }
-        if (lower.equals("alex")) {
-            return new SkinData(ALEX_SKIN, true);
+        if (trimmed.equalsIgnoreCase("alex")) {
+            return ALEX_SKIN_DATA;
         }
 
         Minecraft client = Minecraft.getInstance();
@@ -136,15 +148,23 @@ public class PlayerTotemClientHandler {
         // 3. Delegate to Minecraft's built-in PlayerSkinRenderCache (asynchronous Mojang API & session resolution)
         try {
             if (client.playerSkinRenderCache() != null) {
-                ResolvableProfile profile = ResolvableProfile.createUnresolved(trimmed);
+                String key = trimmed.toLowerCase();
+                ResolvableProfile profile = UNRESOLVED_PROFILE_CACHE.get(key);
+                if (profile == null) {
+                    if (UNRESOLVED_PROFILE_CACHE.size() >= MAX_PROFILE_CACHE_SIZE) {
+                        UNRESOLVED_PROFILE_CACHE.clear();
+                    }
+                    profile = ResolvableProfile.createUnresolved(trimmed);
+                    UNRESOLVED_PROFILE_CACHE.put(key, profile);
+                }
                 PlayerSkinRenderCache.RenderInfo renderInfo = client.playerSkinRenderCache().getOrDefault(profile);
                 if (renderInfo != null && renderInfo.playerSkin() != null) {
                     return getSkinDataFromPlayerSkin(renderInfo.playerSkin());
                 }
             }
-        } catch (Throwable ignored) {}
+        } catch (Exception ignored) {}
 
-        return new SkinData(DEFAULT_SKIN, false);
+        return DEFAULT_SKIN_DATA;
     }
 
     /**
@@ -168,31 +188,30 @@ public class PlayerTotemClientHandler {
             if (layer == null) return;
 
             SkinData skinData = resolveSkin(stack, owner);
+            if (skinData == null) {
+                skinData = DEFAULT_SKIN_DATA;
+            }
 
             // Crucial for GUI / inventory / container rendering:
             // In Minecraft 26.3, DynamicAtlasAllocator caches rendered GUI item icons by
-            // TrackingItemStackRenderState.getModelIdentity(). Appending both the target player username
-            // and the resolved SkinData ensures each unique totem receives its own dedicated slot in
-            // the GuiItemAtlas, allowing renamed totems to render their custom skins in inventory & hotbar.
-            String targetUsername = getTotemTargetUsername(stack);
-            if (targetUsername != null) {
-                state.appendModelIdentityElement(targetUsername.toLowerCase());
-            }
-            if (skinData != null) {
-                state.appendModelIdentityElement(skinData);
-                if (skinData.isRainbow()) {
-                    state.setAnimated();
-                }
+            // TrackingItemStackRenderState.getModelIdentity(). Appending the resolved SkinData
+            // (which is a record containing texture Identifier, isSlim, isRainbow, isUpsideDown)
+            // ensures each unique totem appearance receives its own dedicated slot in the GuiItemAtlas.
+            state.appendModelIdentityElement(skinData);
+            if (skinData.isRainbow()) {
+                state.setAnimated();
             }
 
             layer.setupSpecialModel(PlayerTotemRenderer.INSTANCE, skinData);
-        } catch (Throwable ignored) {
+        } catch (Exception ignored) {
             // Under no circumstances should custom totem layer resolution crash the game or render pipeline
         }
     }
 
+    private static ItemStack clientLastMainHandRef = null;
     private static ItemStack clientLastHeldMainHand = null;
     private static long clientLastHeldMainHandTime = 0L;
+    private static ItemStack clientLastOffHandRef = null;
     private static ItemStack clientLastHeldOffHand = null;
     private static long clientLastHeldOffHandTime = 0L;
 
@@ -203,29 +222,27 @@ public class PlayerTotemClientHandler {
      */
     public static void updateHeldTotems(LocalPlayer player) {
         if (player == null) return;
-        try {
-            long now = System.currentTimeMillis();
+        long now = System.currentTimeMillis();
 
-            ItemStack mainHand = player.getItemInHand(InteractionHand.MAIN_HAND);
-            if (mainHand != null && !mainHand.isEmpty() && isTotem(mainHand)) {
-                if (clientLastHeldMainHand == null || !ItemStack.matches(mainHand, clientLastHeldMainHand)) {
-                    ItemStack copy = mainHand.copy();
-                    copy.setCount(1);
-                    clientLastHeldMainHand = copy;
-                }
-                clientLastHeldMainHandTime = now;
+        ItemStack mainHand = player.getItemInHand(InteractionHand.MAIN_HAND);
+        if (mainHand != null && !mainHand.isEmpty() && isTotem(mainHand)) {
+            if (mainHand != clientLastMainHandRef || clientLastHeldMainHand == null
+                    || !ItemStack.isSameItemSameComponents(mainHand, clientLastHeldMainHand)) {
+                clientLastMainHandRef = mainHand;
+                clientLastHeldMainHand = mainHand.copyWithCount(1);
             }
+            clientLastHeldMainHandTime = now;
+        }
 
-            ItemStack offHand = player.getItemInHand(InteractionHand.OFF_HAND);
-            if (offHand != null && !offHand.isEmpty() && isTotem(offHand)) {
-                if (clientLastHeldOffHand == null || !ItemStack.matches(offHand, clientLastHeldOffHand)) {
-                    ItemStack copy = offHand.copy();
-                    copy.setCount(1);
-                    clientLastHeldOffHand = copy;
-                }
-                clientLastHeldOffHandTime = now;
+        ItemStack offHand = player.getItemInHand(InteractionHand.OFF_HAND);
+        if (offHand != null && !offHand.isEmpty() && isTotem(offHand)) {
+            if (offHand != clientLastOffHandRef || clientLastHeldOffHand == null
+                    || !ItemStack.isSameItemSameComponents(offHand, clientLastHeldOffHand)) {
+                clientLastOffHandRef = offHand;
+                clientLastHeldOffHand = offHand.copyWithCount(1);
             }
-        } catch (Throwable ignored) {}
+            clientLastHeldOffHandTime = now;
+        }
     }
 
     private static boolean isTotem(ItemStack stack) {
@@ -250,12 +267,12 @@ public class PlayerTotemClientHandler {
             }
 
             // 2. Check if a server-side pop was recorded for this player (singleplayer or modded server)
-            if (player != null && player.getUUID() != null) {
-                ItemStack serverPopped = TotemPopTracker.getRecordedPoppedTotem(player.getUUID());
-                if (serverPopped != null && !serverPopped.isEmpty()) {
-                    if (serverPopped.has(DataComponents.PROFILE) || serverPopped.has(DataComponents.CUSTOM_NAME)) {
-                        return serverPopped;
-                    }
+            ItemStack serverPopped = (player != null && player.getUUID() != null)
+                ? TotemPopTracker.getRecordedPoppedTotem(player.getUUID())
+                : null;
+            if (serverPopped != null && !serverPopped.isEmpty()) {
+                if (serverPopped.has(DataComponents.PROFILE) || serverPopped.has(DataComponents.CUSTOM_NAME)) {
+                    return serverPopped;
                 }
             }
 
@@ -277,11 +294,8 @@ public class PlayerTotemClientHandler {
             }
 
             // 4. If a recorded or tracked totem exists even without custom name, return it (ensures count 1)
-            if (player != null && player.getUUID() != null) {
-                ItemStack serverPopped = TotemPopTracker.getRecordedPoppedTotem(player.getUUID());
-                if (serverPopped != null && !serverPopped.isEmpty()) {
-                    return serverPopped;
-                }
+            if (serverPopped != null && !serverPopped.isEmpty()) {
+                return serverPopped;
             }
             if (clientLastHeldMainHand != null && (now - clientLastHeldMainHandTime < maxAge)) {
                 return clientLastHeldMainHand.copy();
@@ -291,11 +305,9 @@ public class PlayerTotemClientHandler {
             }
 
             if (stack != null && !stack.isEmpty()) {
-                ItemStack copy = stack.copy();
-                copy.setCount(1);
-                return copy;
+                return stack.copyWithCount(1);
             }
-        } catch (Throwable ignored) {}
+        } catch (Exception ignored) {}
 
         return stack != null ? stack : new ItemStack(Items.TOTEM_OF_UNDYING);
     }
@@ -343,29 +355,41 @@ public class PlayerTotemClientHandler {
                 if (owner instanceof AbstractClientPlayer ap) p = ap;
                 else if (owner.asLivingEntity() instanceof AbstractClientPlayer ap) p = ap;
                 if (p != null && p.getGameProfile() != null && p.getGameProfile().name() != null) {
-                    modifier = TotemModifier.parse(p.getGameProfile().name());
+                    modifier = TotemModifier.fromHolderUsername(p.getGameProfile().name());
                 }
             }
 
             SkinData baseSkin = null;
 
-            // 0. Explicit player target from modifier (e.g. "DjElectrobox" in "DjElectrobox#jeb_")
+            // 0. Explicit Profile component or player target from modifier
+            ResolvableProfile profile = stack != null ? stack.get(DataComponents.PROFILE) : null;
             if (modifier.playerName() != null) {
+                // If stack already carries a matching ResolvableProfile, check online/local first, then reuse profile
                 baseSkin = resolveSkinFromName(modifier.playerName());
             }
 
             // 1. Explicit Profile component (if not already resolved from modifier)
-            ResolvableProfile profile = stack != null ? stack.get(DataComponents.PROFILE) : null;
             if (baseSkin == null && profile != null) {
-                baseSkin = resolveSkinFromProfile(profile);
+                String profileName = profile.name().orElse(null);
+                if (profileName == null && profile.partialProfile() != null) {
+                    profileName = profile.partialProfile().name();
+                }
+                if (profileName != null && !profileName.isBlank()) {
+                    // Check local player / online tab list first before hitting async skin cache
+                    Minecraft mc = Minecraft.getInstance();
+                    String trimmed = profileName.trim();
+                    if (mc.player != null && mc.player.getGameProfile() != null
+                            && trimmed.equalsIgnoreCase(mc.player.getGameProfile().name())) {
+                        baseSkin = getSkinDataFromPlayerSkin(mc.player.getSkin());
+                    } else if (mc.getConnection() != null) {
+                        PlayerInfo info = mc.getConnection().getPlayerInfoIgnoreCase(trimmed);
+                        if (info != null && info.getSkin() != null) {
+                            baseSkin = getSkinDataFromPlayerSkin(info.getSkin());
+                        }
+                    }
+                }
                 if (baseSkin == null) {
-                    String profileName = profile.name().orElse(null);
-                    if (profileName == null && profile.partialProfile() != null) {
-                        profileName = profile.partialProfile().name();
-                    }
-                    if (profileName != null && !profileName.isBlank()) {
-                        baseSkin = resolveSkinFromName(profileName.trim());
-                    }
+                    baseSkin = resolveSkinFromProfile(profile);
                 }
             }
 
@@ -374,7 +398,7 @@ public class PlayerTotemClientHandler {
                 if (client.player != null) {
                     baseSkin = getSkinDataFromPlayerSkin(client.player.getSkin());
                 } else {
-                    baseSkin = new SkinData(DEFAULT_SKIN, false);
+                    baseSkin = DEFAULT_SKIN_DATA;
                 }
             }
 
@@ -396,14 +420,14 @@ public class PlayerTotemClientHandler {
                 if (client.player != null) {
                     baseSkin = getSkinDataFromPlayerSkin(client.player.getSkin());
                 } else {
-                    baseSkin = new SkinData(DEFAULT_SKIN, false);
+                    baseSkin = DEFAULT_SKIN_DATA;
                 }
             }
 
             return baseSkin.withModifiers(modifier.isRainbow(), modifier.isUpsideDown());
-        } catch (Throwable ignored) {}
+        } catch (Exception ignored) {}
 
-        return new SkinData(DEFAULT_SKIN, false);
+        return DEFAULT_SKIN_DATA;
     }
 
     /**
