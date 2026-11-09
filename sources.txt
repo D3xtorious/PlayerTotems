@@ -1,0 +1,12 @@
+src/main/java/com/customtotem/playertotems/PlayerTotems.java
+src/main/java/com/customtotem/playertotems/TotemPopTracker.java
+src/main/java/com/customtotem/playertotems/client/PlayerTotemClientHandler.java
+src/main/java/com/customtotem/playertotems/client/PlayerTotemRenderer.java
+src/main/java/com/customtotem/playertotems/client/PlayerTotemsClient.java
+src/main/java/com/customtotem/playertotems/client/TotemModelGeometry.java
+src/main/java/com/customtotem/playertotems/client/mixin/ItemModelResolverMixin.java
+src/main/java/com/customtotem/playertotems/client/mixin/ItemStackRenderStateAccessor.java
+src/main/java/com/customtotem/playertotems/client/mixin/LocalPlayerMixin.java
+src/main/java/com/customtotem/playertotems/mixin/ItemFrameEntityMixin.java
+src/main/java/com/customtotem/playertotems/mixin/AnvilMenuMixin.java
+src/main/java/com/customtotem/playertotems/mixin/LivingEntityMixin.java

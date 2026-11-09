@@ -1,0 +1,23 @@
+# Build artifacts
+target/
+build/
+*.class
+
+# Machine-specific classpath & compiler helper files
+cp.txt
+
+# Crash reports and logs
+crash-*.txt
+*.log
+logs/
+
+# IDE & Editor files
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# OS files
+.DS_Store
+Thumbs.db
