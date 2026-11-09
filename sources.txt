@@ -1,4 +1,5 @@
 src/main/java/com/customtotem/playertotems/PlayerTotems.java
+src/main/java/com/customtotem/playertotems/TotemModifier.java
 src/main/java/com/customtotem/playertotems/TotemPopTracker.java
 src/main/java/com/customtotem/playertotems/client/PlayerTotemClientHandler.java
 src/main/java/com/customtotem/playertotems/client/PlayerTotemRenderer.java

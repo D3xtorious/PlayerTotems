@@ -1,5 +1,6 @@
 package com.customtotem.playertotems.mixin;
 
+import com.customtotem.playertotems.TotemModifier;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.world.inventory.AnvilMenu;
 import net.minecraft.world.inventory.Slot;
@@ -13,9 +14,9 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * When a Totem of Undying is renamed in an Anvil to a player's username,
- * attach the ResolvableProfile component so the totem is permanently bound to that player's skin.
- * If the name is cleared or not a valid Minecraft player username, remove the profile component.
+ * When a Totem of Undying is renamed in an Anvil to a player's username or easter egg tag,
+ * attach the ResolvableProfile component if a specific player name is defined.
+ * If the name is cleared or has no valid player name, remove the profile component.
  */
 @Mixin(AnvilMenu.class)
 public abstract class AnvilMenuMixin {
@@ -30,10 +31,9 @@ public abstract class AnvilMenuMixin {
                 ItemStack result = resultSlot.getItem();
                 if (result != null && !result.isEmpty() && result.is(Items.TOTEM_OF_UNDYING)) {
                     if (this.itemName != null && !this.itemName.isBlank()) {
-                        String name = this.itemName.trim();
-                        // Minecraft usernames are 3 to 16 characters (alphanumeric and underscore)
-                        if (name.matches("^[a-zA-Z0-9_]{3,16}$")) {
-                            result.set(DataComponents.PROFILE, ResolvableProfile.createUnresolved(name));
+                        TotemModifier mod = TotemModifier.parse(this.itemName);
+                        if (mod.playerName() != null) {
+                            result.set(DataComponents.PROFILE, ResolvableProfile.createUnresolved(mod.playerName()));
                         } else {
                             result.remove(DataComponents.PROFILE);
                         }

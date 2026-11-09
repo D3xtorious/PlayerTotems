@@ -1,6 +1,7 @@
 package com.customtotem.playertotems.client;
 
 import com.customtotem.playertotems.PlayerTotems;
+import com.customtotem.playertotems.TotemModifier;
 import com.customtotem.playertotems.TotemPopTracker;
 import com.customtotem.playertotems.client.mixin.ItemStackRenderStateAccessor;
 import net.minecraft.client.Minecraft;
@@ -39,8 +40,10 @@ public class PlayerTotemClientHandler {
      *
      * @param texture Skin texture resource identifier
      * @param isSlim True if the player uses the 3px Alex / Slim model; false for 4px Steve / Classic
+     * @param isRainbow True if the totem cycles smoothly through rainbow colors (jeb_ effect)
+     * @param isUpsideDown True if the totem is flipped upside down (Dinnerbone / Grumm effect)
      */
-    public record SkinData(Identifier texture, boolean isSlim) {
+    public record SkinData(Identifier texture, boolean isSlim, boolean isRainbow, boolean isUpsideDown) {
         public SkinData {
             if (texture != null) {
                 String path = texture.getPath();
@@ -48,6 +51,14 @@ public class PlayerTotemClientHandler {
                     texture = texture.withPath("textures/" + path + ".png");
                 }
             }
+        }
+
+        public SkinData(Identifier texture, boolean isSlim) {
+            this(texture, isSlim, false, false);
+        }
+
+        public SkinData withModifiers(boolean isRainbow, boolean isUpsideDown) {
+            return new SkinData(this.texture, this.isSlim, isRainbow, isUpsideDown);
         }
     }
 
@@ -169,6 +180,9 @@ public class PlayerTotemClientHandler {
             }
             if (skinData != null) {
                 state.appendModelIdentityElement(skinData);
+                if (skinData.isRainbow()) {
+                    state.setAnimated();
+                }
             }
 
             layer.setupSpecialModel(PlayerTotemRenderer.INSTANCE, skinData);
@@ -317,77 +331,76 @@ public class PlayerTotemClientHandler {
         try {
             Minecraft client = Minecraft.getInstance();
 
-            // 0. Explicit Profile or Anvil Renamed Totem:
-            // Locks permanently to that named player's skin in ALL contexts (hand, pop animation, inventory, frame, ground)
-            ResolvableProfile profile = stack.get(DataComponents.PROFILE);
-            if (profile != null) {
-                SkinData profileSkin = resolveSkinFromProfile(profile);
-                if (profileSkin != null) {
-                    return profileSkin;
-                }
-                String profileName = profile.name().orElse(null);
-                if (profileName == null && profile.partialProfile() != null) {
-                    profileName = profile.partialProfile().name();
-                }
-                if (profileName != null && !profileName.isBlank()) {
-                    SkinData data = resolveSkinFromName(profileName.trim());
-                    if (data != null) {
-                        return data;
-                    }
+            // Extract modifiers and target player name from Custom Name or Player Name
+            TotemModifier modifier = TotemModifier.EMPTY;
+            if (stack != null && stack.has(DataComponents.CUSTOM_NAME)) {
+                modifier = TotemModifier.parse(stack.getHoverName().getString());
+            }
+
+            // If no custom name was present, check if holding/owner player has an easter egg name (e.g. Dinnerbone)
+            if (modifier.isEmpty() && owner != null) {
+                AbstractClientPlayer p = null;
+                if (owner instanceof AbstractClientPlayer ap) p = ap;
+                else if (owner.asLivingEntity() instanceof AbstractClientPlayer ap) p = ap;
+                if (p != null && p.getGameProfile() != null && p.getGameProfile().name() != null) {
+                    modifier = TotemModifier.parse(p.getGameProfile().name());
                 }
             }
 
-            if (stack.has(DataComponents.CUSTOM_NAME)) {
-                String customName = stack.getHoverName().getString().trim();
-                if (customName.matches("^[a-zA-Z0-9_]{3,16}$")) {
-                    SkinData named = resolveSkinFromName(customName);
-                    if (named != null) {
-                        return named;
-                    }
-                }
+            SkinData baseSkin = null;
+
+            // 0. Explicit player target from modifier (e.g. "DjElectrobox" in "DjElectrobox#jeb_")
+            if (modifier.playerName() != null) {
+                baseSkin = resolveSkinFromName(modifier.playerName());
             }
 
-            // 1. In an ItemFrame: show placer's skin and model if recorded, else viewer's
-            if (owner instanceof ItemFrame) {
-                if (profile != null) {
-                    SkinData profileSkin = resolveSkinFromProfile(profile);
-                    if (profileSkin != null) {
-                        return profileSkin;
-                    }
+            // 1. Explicit Profile component (if not already resolved from modifier)
+            ResolvableProfile profile = stack != null ? stack.get(DataComponents.PROFILE) : null;
+            if (baseSkin == null && profile != null) {
+                baseSkin = resolveSkinFromProfile(profile);
+                if (baseSkin == null) {
                     String profileName = profile.name().orElse(null);
                     if (profileName == null && profile.partialProfile() != null) {
                         profileName = profile.partialProfile().name();
                     }
                     if (profileName != null && !profileName.isBlank()) {
-                        SkinData data = resolveSkinFromName(profileName.trim());
-                        if (data != null) {
-                            return data;
-                        }
+                        baseSkin = resolveSkinFromName(profileName.trim());
                     }
                 }
-                if (client.player != null) {
-                    return getSkinDataFromPlayerSkin(client.player.getSkin());
-                }
-                return new SkinData(DEFAULT_SKIN, false);
             }
 
-            // 2. Held by another player or yourself: show that holding player's skin and model
-            if (owner != null) {
+            // 2. In an ItemFrame: show placer's skin if recorded, else viewer's
+            if (baseSkin == null && owner instanceof ItemFrame) {
+                if (client.player != null) {
+                    baseSkin = getSkinDataFromPlayerSkin(client.player.getSkin());
+                } else {
+                    baseSkin = new SkinData(DEFAULT_SKIN, false);
+                }
+            }
+
+            // 3. Held by another player or yourself: show that holding player's skin and model
+            if (baseSkin == null && owner != null) {
                 AbstractClientPlayer player = null;
-                if (owner instanceof AbstractClientPlayer p) {
-                    player = p;
-                } else if (owner.asLivingEntity() instanceof AbstractClientPlayer p) {
-                    player = p;
+                if (owner instanceof AbstractClientPlayer ap) {
+                    player = ap;
+                } else if (owner.asLivingEntity() instanceof AbstractClientPlayer ap) {
+                    player = ap;
                 }
                 if (player != null) {
-                    return getSkinDataFromPlayerSkin(player.getSkin());
+                    baseSkin = getSkinDataFromPlayerSkin(player.getSkin());
                 }
             }
 
-            // 3. GUI / Inventory / Container / Ground / Viewer fallback
-            if (client.player != null) {
-                return getSkinDataFromPlayerSkin(client.player.getSkin());
+            // 4. GUI / Inventory / Container / Ground / Viewer fallback
+            if (baseSkin == null) {
+                if (client.player != null) {
+                    baseSkin = getSkinDataFromPlayerSkin(client.player.getSkin());
+                } else {
+                    baseSkin = new SkinData(DEFAULT_SKIN, false);
+                }
             }
+
+            return baseSkin.withModifiers(modifier.isRainbow(), modifier.isUpsideDown());
         } catch (Throwable ignored) {}
 
         return new SkinData(DEFAULT_SKIN, false);
@@ -402,7 +415,15 @@ public class PlayerTotemClientHandler {
     public static String getTotemTargetUsername(ItemStack stack) {
         if (stack == null || stack.isEmpty()) return null;
 
-        // 1. Check Profile component
+        // 1. Check Custom Name component (e.g. renamed in Anvil with possible tags like DjElectrobox#jeb_)
+        if (stack.has(DataComponents.CUSTOM_NAME)) {
+            TotemModifier mod = TotemModifier.parse(stack.getHoverName().getString());
+            if (mod.playerName() != null) {
+                return mod.playerName();
+            }
+        }
+
+        // 2. Check Profile component
         ResolvableProfile profile = stack.get(DataComponents.PROFILE);
         if (profile != null) {
             String name = profile.name().orElse(null);
@@ -411,17 +432,10 @@ public class PlayerTotemClientHandler {
             }
             if (name != null) {
                 name = name.trim();
-                if (name.matches("^[a-zA-Z0-9_]{3,16}$")) {
-                    return name;
+                TotemModifier mod = TotemModifier.parse(name);
+                if (mod.playerName() != null) {
+                    return mod.playerName();
                 }
-            }
-        }
-
-        // 2. Check Custom Name component (e.g. renamed in Anvil)
-        if (stack.has(DataComponents.CUSTOM_NAME)) {
-            String customName = stack.getHoverName().getString().trim();
-            if (customName.matches("^[a-zA-Z0-9_]{3,16}$")) {
-                return customName;
             }
         }
 

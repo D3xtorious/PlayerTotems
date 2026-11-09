@@ -8,7 +8,7 @@ $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $scriptDir
 
-Write-Host "==> Building Player Totems (1.1.3+26.3)..." -ForegroundColor Cyan
+Write-Host "==> Building Player Totems (1.2.1+26.3)..." -ForegroundColor Cyan
 
 # Ensure target directories exist
 if (-not (Test-Path "target/classes")) {
@@ -29,8 +29,8 @@ Write-Host "==> Copying resources to target/classes..." -ForegroundColor Cyan
 Copy-Item -Path "src/main/resources/*" -Destination "target/classes" -Recurse -Force
 
 # 3. Package JAR
-Write-Host "==> Packaging target/playertotems-1.1.3+26.3.jar..." -ForegroundColor Cyan
-& jar -cf "target/playertotems-1.1.3+26.3.jar" -C "target/classes" .
-Copy-Item "target/playertotems-1.1.3+26.3.jar" -Destination "..\playertotems-1.1.3+26.3.jar" -Force
+Write-Host "==> Packaging target/playertotems-1.2.1+26.3.jar..." -ForegroundColor Cyan
+& jar -cf "target/playertotems-1.2.1+26.3.jar" -C "target/classes" .
+Copy-Item "target/playertotems-1.2.1+26.3.jar" -Destination "..\playertotems-1.2.1+26.3.jar" -Force
 
-Write-Host "==> Build succeeded: playertotems-1.1.3+26.3.jar ready for Modrinth release!" -ForegroundColor Green
+Write-Host "==> Build succeeded: playertotems-1.2.1+26.3.jar ready for Modrinth release!" -ForegroundColor Green

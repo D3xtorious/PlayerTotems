@@ -6,6 +6,8 @@
 [![Fabric Loader](https://img.shields.io/badge/Fabric-0.18.0+-blue.svg)](https://fabricmc.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+![Player Totems Showcase](Gruppenfoto.png)
+
 Tired of the boring old golden totem? **Player Totems** turns your Totem of Undying into an awesome mini 3D statue of **your own Minecraft skin**!
 
 ---
@@ -14,8 +16,9 @@ Tired of the boring old golden totem? **Player Totems** turns your Totem of Undy
 
 - 👤 **Your Skin in 3D:** Hold a totem and it shows your actual skin in 3D — including hats, hair, jackets, and outer layers!
 - 👥 **Multiplayer Friendly:** When your friend holds a totem, you see *their* skin!
-- 🏷️ **Anvil Naming:** Rename a totem in an anvil to any player's username (like `DjElectroBox`, `Technoblade`, or your friend's name) to permanently turn it into their skin!
-- 💥 **Totem Pop Screen Animation:** When a totem activates to save your life, the floating animation in the center of your screen honors the exact skin of the popped totem (including renamed players)!
+- 🏷️ **Anvil Naming:** Rename a totem in an anvil to any player's username (like `Technoblade` or your friend's name) to permanently turn it into their skin!
+- 🌈 **Easter Eggs & Modifiers (`#jeb_` & `#dinnerbone`):** Add `#jeb_` (e.g. `Technoblade#jeb_`) to surround the totem with a radiant, animated rainbow border while preserving the player's true skin! Or add `#dinnerbone` / `#grumm` to flip it upside-down! Combine them (`Technoblade#jeb_#dinnerbone`) for both!
+- 💥 **Totem Pop Screen Animation:** When a totem activates to save your life, the floating animation in the center of your screen honors the exact skin of the popped totem (including renamed players and easter egg effects)!
 - 🖼️ **Trophy Frames:** Put totems in item frames on your wall to make an epic trophy room or Hall of Fame in your base.
 - 📐 **Steve & Alex Arms:** Automatically detects classic 4-pixel arms (Steve) and slim 3-pixel arms (Alex). No setup needed!
 
@@ -35,6 +38,14 @@ Want to give a friend a totem sculpted like yourself, or keep your favorite YouT
 3. Take out your totem — it is now permanently bound to that player's skin!
 
 *(Want to change it back? Just clear the name or rename it to `Totem of Undying`.)*
+
+### 3. Easter Egg Modifiers (`#jeb_` and `#dinnerbone`)
+Want a rainbow border or an upside-down guardian? Use tag modifiers in the anvil:
+- **`Technoblade#jeb_`**: Displays `Technoblade`'s authentic, crisp player skin surrounded by a vibrant, luminous animated rainbow border that outlines the entire totem!
+- **`Technoblade#dinnerbone`** (or `#grumm`): Sets the skin and flips the 3D model upside-down!
+- **`Technoblade#jeb_#dinnerbone`**: Combines both — an upside-down totem with a glowing rainbow border!
+- **`#jeb_`** or **`#dinnerbone`**: Use tag without a name to keep your own / holder's skin with the effect.
+- **`jeb_`** or **`Dinnerbone`**: Standalone vanilla easter eggs (renders Mojang developer skins with their respective easter eggs).
 
 ---
 

@@ -19,6 +19,7 @@ import java.util.function.Consumer;
 public class PlayerTotemRenderer implements SpecialModelRenderer<PlayerTotemClientHandler.SkinData> {
     public static final PlayerTotemRenderer INSTANCE = new PlayerTotemRenderer();
     private static final Identifier DEFAULT_SKIN = Identifier.withDefaultNamespace("textures/entity/player/wide/steve.png");
+    private static final Identifier WHITE_TEXTURE = Identifier.fromNamespaceAndPath("playertotems", "textures/misc/white.png");
 
     @Override
     public void submit(PlayerTotemClientHandler.SkinData skinData, PoseStack poseStack, SubmitNodeCollector collector, int light, int overlay, boolean hasFoil, int color) {
@@ -44,16 +45,31 @@ public class PlayerTotemRenderer implements SpecialModelRenderer<PlayerTotemClie
         poseStack.pushPose();
         // Scale and align 0..16 Blockbench coordinate space with Minecraft's item box
         poseStack.translate(0.5f, 0.5f, 0.5f);
+
+        // Dinnerbone / Grumm upside-down flip
+        if (skinData.isUpsideDown()) {
+            poseStack.mulPose(new org.joml.Matrix4f().rotationZ((float) Math.PI));
+        }
+
         poseStack.scale(1.0f / 16.0f, 1.0f / 16.0f, 1.0f / 16.0f);
         poseStack.translate(-8.0f, -8.0f, -8.0f);
 
+        // 1. If this totem has the jeb_ effect, render the glowing rainbow border first!
+        if (skinData.isRainbow()) {
+            RenderType borderRenderType = RenderTypes.entityCutout(WHITE_TEXTURE, false);
+            collector.submitCustomGeometry(poseStack, borderRenderType, (pose, consumer) -> {
+                TotemModelGeometry.renderRainbowBorder(pose, consumer, light, overlay, isSlim);
+            });
+        }
+
+        // 2. Render the actual player totem with their authentic, untinted player skin!
         collector.submitCustomGeometry(poseStack, renderType, (pose, consumer) -> {
-            TotemModelGeometry.render(pose, consumer, light, overlay, isSlim);
+            TotemModelGeometry.render(pose, consumer, light, overlay, isSlim, 0xFFFFFFFF);
         });
 
         if (hasFoil) {
             collector.submitCustomGeometry(poseStack, RenderTypes.itemCutoutGlint(skinTexture), (pose, consumer) -> {
-                TotemModelGeometry.render(pose, consumer, light, overlay, isSlim);
+                TotemModelGeometry.render(pose, consumer, light, overlay, isSlim, 0xFFFFFFFF);
             });
         }
 
