@@ -6,7 +6,7 @@
 [![Fabric Loader](https://img.shields.io/badge/Fabric-0.18.0+-blue.svg)](https://fabricmc.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-![Player Totems Showcase](Gruppenfoto.png)
+![Player Totems Showcase](Totem Pop.png)
 
 Tired of the boring old golden totem? **Player Totems** turns your Totem of Undying into an awesome mini 3D statue of **your own Minecraft skin**!
 
